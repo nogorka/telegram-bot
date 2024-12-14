@@ -1,0 +1,39 @@
+stages:
+  - build
+  - deploy
+
+variables:                                # Настройки для Docker
+  DOCKER_HOST: tcp://docker:2375/
+  DOCKER_TLS_CERTDIR: ""
+  APP_NAME: telegram_bot                  # Название приложения
+
+build:
+  stage: build
+  image: docker:latest                    # Используется Docker для сборки
+  services:
+    - docker:dind                         # Docker-in-Docker для сборки образов
+  script:
+    - echo "Building Docker image..."
+    - docker build -t $APP_NAME .         # Собираем Docker-образ с именем telegram_bot
+    - docker save $APP_NAME > bot_image.tar # Сохраняем образ как tar-файл
+  artifacts:
+    paths:
+      - bot_image.tar                     # Сохраняем файл для передачи в следующий этап
+    expire_in: 1 hour                     # Артефакты будут удалены через час
+
+deploy:
+  stage: deploy
+  image: alpine:latest                    # Легковесный образ для деплоя
+  before_script:
+    - apk add --no-cache openssh          # Устанавливаем SSH для передачи файлов
+  script:
+    - echo "Deploying Docker image to server..."
+    - scp bot_image.tar $SERVER_USER@$SERVER_HOST:/tmp/ # Передаем образ на сервер
+    - ssh $SERVER_USER@$SERVER_HOST "
+        docker load < /tmp/bot_image.tar &&
+        cd /path/to/your/app &&
+        docker compose down &&
+        docker compose up -d
+      "                                   # Загружаем и разворачиваем образ
+  only:
+    - dev                                # Выполняется только при пуше в ветку dev
